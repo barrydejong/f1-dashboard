@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "f1-cloudflare-dashboard",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-03-14",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "f1-dashboard-db",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "vars": {
+    "F1_SEASON_YEAR": "2026",
+    "APP_NAME": "F1 Dashboard"
+  }
+}
