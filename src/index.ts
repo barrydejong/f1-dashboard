@@ -125,7 +125,7 @@ type D1Database = any;
     const SPRINT_RESULTS_KEY = 'sprint-results';
     const DRIVER_STANDINGS_KEY = 'driver-standings';
     const CONSTRUCTOR_STANDINGS_KEY = 'constructor-standings';
-    const OPENAI_MODEL = 'gpt-5-mini';
+    const OPENAI_MODEL = 'gpt-5.4';
     const FACTS_CACHE_TTL_SECONDS = 300;
     const REPORT_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
     
