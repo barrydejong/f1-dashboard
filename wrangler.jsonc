@@ -11,7 +11,7 @@
     {
       "binding": "DB",
       "database_name": "f1-dashboard-db",
-      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+      "database_id": "77661b67-8dec-4e11-966f-30e8f7a9e185"
     }
   ],
   "vars": {
