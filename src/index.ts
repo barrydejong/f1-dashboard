@@ -1,713 +1,733 @@
-export interface Env {
-  DB: D1Database;
-  ASSETS: Fetcher;
-  OPENAI_API_KEY?: string;
-  F1_SEASON_YEAR?: string;
-  APP_NAME?: string;
-}
+type D1Database = any;
+    type Fetcher = any;
+    declare const crypto: Crypto;
 
-type Json = Record<string, unknown>;
-
-type RaceResult = {
-  season: number;
-  round: number;
-  raceName: string;
-  raceDate: string;
-  raceTimeUtc: string;
-  circuitName: string;
-  locality: string;
-  country: string;
-  winner: string;
-  winnerTeam: string;
-  podium: Array<{ pos: number; name: string; team: string }>;
-  top10: Array<{ pos: number; name: string; team: string }>;
-  gainers: string[];
-  dnfs: string[];
-  fastestLap: string | null;
-  fastestLapTime: string | null;
-  sprintPodium: Array<{ pos: number; name: string; team: string }>;
-  driversLeader: string | null;
-  constructorsLeader: string | null;
-};
-
-type GeneratedReport = {
-  winner: string;
-  winnerTeam: string;
-  podium: Array<{ pos: number; name: string; team: string }>;
-  highlights: string[];
-  report: string;
-};
-
-const OPENAI_MODEL = "gpt-5.4";
-const API_BASE = "https://api.jolpi.ca/ergast/f1";
-
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-
-    try {
-      if (url.pathname === "/api/health") {
-        return json({
-          ok: true,
-          app: env.APP_NAME || "F1 Dashboard",
-          season: getSeason(env),
-          model: OPENAI_MODEL,
-          time: new Date().toISOString(),
-        });
-      }
-
-      if (url.pathname === "/api/dashboard") {
-        return json(await buildDashboard(env));
-      }
-
-      if (url.pathname === "/api/refresh-facts" && request.method === "POST") {
-        const result = await refreshFacts(env);
-        return json(result);
-      }
-
-      if (url.pathname === "/api/refresh-reports" && request.method === "POST") {
-        const result = await refreshReports(env);
-        return json(result);
-      }
-
-      return env.ASSETS.fetch(request);
-    } catch (error) {
-      return json(
-        {
-          ok: false,
-          error: getErrorMessage(error),
-        },
-        500
-      );
+    export interface Env {
+      DB: D1Database;
+      ASSETS: Fetcher;
+      F1_SEASON_YEAR?: string;
+      OPENAI_API_KEY?: string;
     }
-  },
-};
 
-function getSeason(env: Env): number {
-  const val = env.F1_SEASON_YEAR || "2026";
-  return Number(val);
-}
+    type ErgastDriver = {
+      driverId?: string;
+      code?: string;
+      givenName?: string;
+      familyName?: string;
+      permanentNumber?: string;
+      nationality?: string;
+    };
 
-function json(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    },
-  });
-}
+    type ErgastConstructor = { constructorId?: string; name?: string; nationality?: string };
+    type ErgastLocation = { locality?: string; country?: string; lat?: string; long?: string };
+    type ErgastCircuit = { circuitId?: string; circuitName?: string; Location?: ErgastLocation };
 
-async function fetchJson(url: string): Promise<any> {
-  const res = await fetch(url, { cf: { cacheTtl: 0, cacheEverything: false } });
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status} bij ${url}`);
-  }
-  return res.json();
-}
+    type ErgastFastestLap = {
+      rank?: string;
+      lap?: string;
+      Time?: { time?: string };
+      AverageSpeed?: { speed?: string; units?: string };
+    };
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+    type ErgastResult = {
+      number?: string;
+      position?: string;
+      positionText?: string;
+      grid?: string;
+      status?: string;
+      laps?: string;
+      points?: string;
+      Time?: { millis?: string; time?: string };
+      Driver?: ErgastDriver;
+      Constructor?: ErgastConstructor;
+      FastestLap?: ErgastFastestLap;
+    };
 
-function flagForCountry(country: string): string {
-  const map: Record<string, string> = {
-    Australia: "🇦🇺",
-    China: "🇨🇳",
-    Japan: "🇯🇵",
-    Bahrain: "🇧🇭",
-    "Saudi Arabia": "🇸🇦",
-    USA: "🇺🇸",
-    Canada: "🇨🇦",
-    Monaco: "🇲🇨",
-    Spain: "🇪🇸",
-    Austria: "🇦🇹",
-    UK: "🇬🇧",
-    Belgium: "🇧🇪",
-    Hungary: "🇭🇺",
-    Netherlands: "🇳🇱",
-    Italy: "🇮🇹",
-    Azerbaijan: "🇦🇿",
-    Singapore: "🇸🇬",
-    Mexico: "🇲🇽",
-    Brazil: "🇧🇷",
-    Qatar: "🇶🇦",
-    UAE: "🇦🇪",
-  };
-  return map[country] || "🏁";
-}
+    type ErgastRace = {
+      season?: string;
+      round?: string;
+      url?: string;
+      raceName?: string;
+      Circuit?: ErgastCircuit;
+      date?: string;
+      time?: string;
+      Results?: ErgastResult[];
+      SprintResults?: ErgastResult[];
+    };
 
-function toDutchNLTime(timeUtc: string): string {
-  if (!timeUtc) return "";
-  const d = new Date(`1970-01-01T${timeUtc}`);
-  return (
-    d.toLocaleTimeString("nl-NL", {
-      timeZone: "Europe/Amsterdam",
-      hour: "2-digit",
-      minute: "2-digit",
-    }) + " NL"
-  );
-}
+    type DriverStanding = {
+      position?: string;
+      points?: string;
+      wins?: string;
+      Driver?: ErgastDriver;
+      Constructors?: ErgastConstructor[];
+    };
 
-function raceDateTimeUtc(date: string, timeUtc?: string): string {
-  const time = timeUtc || "00:00:00Z";
-  return new Date(`${date}T${time}`).toISOString();
-}
+    type ConstructorStanding = {
+      position?: string;
+      points?: string;
+      wins?: string;
+      Constructor?: ErgastConstructor;
+    };
 
-function isEditableRace(raceDateTimeIso: string): boolean {
-  const raceMs = new Date(raceDateTimeIso).getTime();
-  const nowMs = Date.now();
-  return nowMs < raceMs + 24 * 60 * 60 * 1000;
-}
-
-function editableUntilIso(raceDateTimeIso: string): string {
-  const raceMs = new Date(raceDateTimeIso).getTime();
-  return new Date(raceMs + 24 * 60 * 60 * 1000).toISOString();
-}
-
-async function cacheSet(env: Env, key: string, value: unknown): Promise<void> {
-  await env.DB.prepare(
-    `INSERT INTO cache_entries (cache_key, json_value, updated_at)
-     VALUES (?1, ?2, CURRENT_TIMESTAMP)
-     ON CONFLICT(cache_key) DO UPDATE SET
-       json_value = excluded.json_value,
-       updated_at = CURRENT_TIMESTAMP`
-  )
-    .bind(key, JSON.stringify(value))
-    .run();
-}
-
-async function cacheGet<T = any>(env: Env, key: string): Promise<{ value: T | null; updatedAt: string | null }> {
-  const row = await env.DB.prepare(
-    `SELECT json_value, updated_at FROM cache_entries WHERE cache_key = ?1`
-  )
-    .bind(key)
-    .first<{ json_value: string; updated_at: string }>();
-
-  if (!row) return { value: null, updatedAt: null };
-
-  return {
-    value: JSON.parse(row.json_value) as T,
-    updatedAt: row.updated_at,
-  };
-}
-
-async function refreshFacts(env: Env): Promise<Json> {
-  const season = getSeason(env);
-
-  const [scheduleData, lastResultsData, driversData, constructorsData, sprintData] = await Promise.all([
-    fetchJson(`${API_BASE}/${season}.json`),
-    fetchJson(`${API_BASE}/${season}/last/results.json`),
-    fetchJson(`${API_BASE}/${season}/driverStandings.json`),
-    fetchJson(`${API_BASE}/${season}/constructorStandings.json`),
-    fetchJson(`${API_BASE}/${season}/sprint.json`).catch(() => null),
-  ]);
-
-  const scheduleRaces = scheduleData?.MRData?.RaceTable?.Races || [];
-  const lastFinishedRaces = lastResultsData?.MRData?.RaceTable?.Races || [];
-  const sprintRaces = sprintData?.MRData?.RaceTable?.Races || [];
-
-  const completedRounds = new Set<number>(
-    lastFinishedRaces.map((r: any) => Number(r.round))
-  );
-
-  const schedule = scheduleRaces.map((race: any) => ({
-    n: Number(race.round),
-    gpName: race.raceName,
-    circuit: race.Circuit?.circuitName || "",
-    loc: `${race.Circuit?.Location?.locality || ""}, ${race.Circuit?.Location?.country || ""}`,
-    date: race.date,
-    time: toDutchNLTime(race.time || "00:00:00Z"),
-    flag: flagForCountry(race.Circuit?.Location?.country || ""),
-    done: completedRounds.has(Number(race.round)),
-  }));
-
-  const driverStandings =
-    driversData?.MRData?.StandingsTable?.StandingsLists?.[0]?.DriverStandings?.map((d: any) => ({
-      pos: Number(d.position),
-      name: `${d.Driver.givenName} ${d.Driver.familyName}`,
-      team: d.Constructors?.[0]?.name || "",
-      pts: Number(d.points),
-    })) || [];
-
-  const constructorStandings =
-    constructorsData?.MRData?.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings?.map((c: any) => ({
-      pos: Number(c.position),
-      name: c.Constructor?.name || "",
-      pts: Number(c.points),
-    })) || [];
-
-  await cacheSet(env, `schedule:${season}`, schedule);
-  await cacheSet(env, `results:last:${season}`, lastFinishedRaces);
-  await cacheSet(env, `driver-standings:${season}`, driverStandings);
-  await cacheSet(env, `constructor-standings:${season}`, constructorStandings);
-  await cacheSet(env, `sprints:${season}`, sprintRaces);
-
-  return {
-    ok: true,
-    season,
-    scheduleCount: schedule.length,
-    completedRaces: completedRounds.size,
-    driverStandingsCount: driverStandings.length,
-    constructorStandingsCount: constructorStandings.length,
-    updatedAt: new Date().toISOString(),
-  };
-}
-
-function buildRacePayload(
-  race: any,
-  driversLeader: string | null,
-  constructorsLeader: string | null,
-  sprintRace?: any
-): RaceResult {
-  const results = race.Results || [];
-  const winner = results[0];
-  const podium = results.slice(0, 3).map((r: any, idx: number) => ({
-    pos: idx + 1,
-    name: `${r.Driver.givenName} ${r.Driver.familyName}`,
-    team: r.Constructor.name,
-  }));
-
-  const top10 = results.slice(0, 10).map((r: any) => ({
-    pos: Number(r.position),
-    name: `${r.Driver.givenName} ${r.Driver.familyName}`,
-    team: r.Constructor.name,
-  }));
-
-  const gainers = results
-    .map((r: any) => {
-      const start = Number(r.grid || 0);
-      const finish = Number(r.position || 0);
-      const gain = start > 0 && finish > 0 ? start - finish : 0;
-      return {
-        text: `${r.Driver.givenName} ${r.Driver.familyName} won ${gain} plaatsen ten opzichte van de startopstelling`,
-        gain,
+    type RaceTablePayload = {
+      MRData?: {
+        RaceTable?: { season?: string; Races?: ErgastRace[] };
+        StandingsTable?: {
+          season?: string;
+          StandingsLists?: Array<{
+            DriverStandings?: DriverStanding[];
+            ConstructorStandings?: ConstructorStanding[];
+          }>;
+        };
       };
-    })
-    .filter((x: any) => x.gain >= 4)
-    .sort((a: any, b: any) => b.gain - a.gain)
-    .map((x: any) => x.text)
-    .slice(0, 5);
+    };
 
-  const dnfs = results
-    .filter((r: any) => r.status && !String(r.status).startsWith("+") && r.status !== "Finished")
-    .map((r: any) => `${r.Driver.givenName} ${r.Driver.familyName} (${r.status})`);
+    type CacheRow = {
+      json_value?: string;
+      updated_at?: string;
+    };
 
-  const fastest = results.find((r: any) => r.FastestLap);
-  const sprintPodium = (sprintRace?.SprintResults || []).slice(0, 3).map((r: any, idx: number) => ({
-    pos: idx + 1,
-    name: `${r.Driver.givenName} ${r.Driver.familyName}`,
-    team: r.Constructor.name,
-  }));
+    type SavedRaceReport = {
+      season: number;
+      round: number;
+      race_name: string;
+      race_date: string | null;
+      race_time: string | null;
+      race_datetime_utc: string | null;
+      circuit_name: string | null;
+      locality: string | null;
+      country: string | null;
+      winner_name: string | null;
+      winner_team: string | null;
+      podium_json: string;
+      highlights_json: string;
+      report_text: string;
+      source_payload_json: string;
+      source_hash: string;
+      report_model: string | null;
+      report_source: string | null;
+      created_at: string;
+      updated_at: string;
+    };
 
-  return {
-    season: Number(race.season),
-    round: Number(race.round),
-    raceName: race.raceName,
-    raceDate: race.date,
-    raceTimeUtc: race.time || "00:00:00Z",
-    circuitName: race.Circuit?.circuitName || "",
-    locality: race.Circuit?.Location?.locality || "",
-    country: race.Circuit?.Location?.country || "",
-    winner: `${winner.Driver.givenName} ${winner.Driver.familyName}`,
-    winnerTeam: winner.Constructor.name,
-    podium,
-    top10,
-    gainers,
-    dnfs,
-    fastestLap: fastest ? `${fastest.Driver.givenName} ${fastest.Driver.familyName}` : null,
-    fastestLapTime: fastest?.FastestLap?.Time?.time || null,
-    sprintPodium,
-    driversLeader,
-    constructorsLeader,
-  };
-}
+    type GeneratedReport = {
+      winner: string;
+      winnerTeam: string;
+      podium: Array<{ pos: number; name: string; team: string }>;
+      highlights: string[];
+      report: string;
+    };
 
-function buildFallbackReport(payload: RaceResult): GeneratedReport {
-  const highlights: string[] = [
-    `${payload.winner} won de ${payload.raceName} voor ${payload.winnerTeam}.`,
-    `${payload.podium[1]?.name || "De nummer twee"} en ${payload.podium[2]?.name || "de nummer drie"} completeerden het podium.`,
-  ];
+    const JOLPICA_BASE = 'https://api.jolpi.ca/ergast/f1';
+    const SCHEDULE_KEY = 'season-schedule';
+    const RESULTS_KEY = 'race-results';
+    const SPRINT_RESULTS_KEY = 'sprint-results';
+    const DRIVER_STANDINGS_KEY = 'driver-standings';
+    const CONSTRUCTOR_STANDINGS_KEY = 'constructor-standings';
+    const OPENAI_MODEL = 'gpt-5.4';
+    const FACTS_CACHE_TTL_SECONDS = 300;
+    const REPORT_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-  if (payload.gainers[0]) highlights.push(`${payload.gainers[0]}.`);
-  if (payload.fastestLap && payload.fastestLapTime) {
-    highlights.push(`De snelste ronde kwam op naam van ${payload.fastestLap} in ${payload.fastestLapTime}.`);
-  }
+    export default {
+      async fetch(request: Request, env: Env): Promise<Response> {
+        const url = new URL(request.url);
 
-  const reportParts: string[] = [];
-  reportParts.push(
-    `${payload.winner} heeft de ${payload.raceName} gewonnen voor ${payload.winnerTeam}. ` +
-      `Het podium werd compleet gemaakt door ${payload.podium[1]?.name || "de nummer twee"} en ${payload.podium[2]?.name || "de nummer drie"}.`
-  );
+        if (url.pathname === '/api/dashboard' && request.method === 'GET') {
+          try {
+            return json(await getDashboard(env), {
+              headers: { 'cache-control': `public, max-age=${FACTS_CACHE_TTL_SECONDS}` }
+            });
+          } catch (error) {
+            return json({ ok: false, error: getErrorMessage(error) }, { status: 500 });
+          }
+        }
 
-  if (payload.gainers.length) {
-    reportParts.push(`${payload.gainers.join(", ")}.`);
-  }
+        if (url.pathname === '/api/refresh-facts' && request.method === 'POST') {
+          try {
+            return json(await refreshFacts(env));
+          } catch (error) {
+            return json({ ok: false, error: getErrorMessage(error) }, { status: 500 });
+          }
+        }
 
-  if (payload.sprintPodium.length) {
-    reportParts.push(
-      `Het sprintgedeelte van het weekend werd gewonnen door ${payload.sprintPodium[0]?.name}, ` +
-        `met daarnaast ${payload.sprintPodium[1]?.name} en ${payload.sprintPodium[2]?.name} vooraan.`
-    );
-  }
+        if (url.pathname === '/api/refresh-reports' && request.method === 'POST') {
+          try {
+            return json(await refreshReports(env));
+          } catch (error) {
+            return json({ ok: false, error: getErrorMessage(error) }, { status: 500 });
+          }
+        }
 
-  if (payload.dnfs.length) {
-    reportParts.push(`Niet iedereen haalde de finish: ${payload.dnfs.join(", ")}.`);
-  }
+        if (url.pathname === '/api/health' && request.method === 'GET') {
+          return json({ ok: true, service: 'f1-cloudflare-dashboard', model: OPENAI_MODEL });
+        }
 
-  if (payload.fastestLap) {
-    reportParts.push(`De snelste ronde kwam op naam van ${payload.fastestLap}.`);
-  }
-
-  if (payload.driversLeader) {
-    reportParts.push(`In het kampioenschap blijft ${payload.driversLeader} voorlopig bovenaan staan.`);
-  }
-
-  return {
-    winner: payload.winner,
-    winnerTeam: payload.winnerTeam,
-    podium: payload.podium,
-    highlights: highlights.slice(0, 4),
-    report: reportParts.join(" "),
-  };
-}
-
-async function generateRaceReport(env: Env, payload: RaceResult): Promise<GeneratedReport> {
-  const fallback = buildFallbackReport(payload);
-
-  if (!env.OPENAI_API_KEY) {
-    console.log("OPENAI_API_KEY ontbreekt, fallback gebruikt");
-    return fallback;
-  }
-
-  const systemPrompt = `
-Je bent een scherpe Formule 1-journalist.
-Je schrijft in natuurlijk, vloeiend Nederlands.
-Je schrijft geen droge samenvatting van statistieken, maar een echt raceverslag.
-
-Belangrijke regels:
-- Open met het hoofdverhaal van de race.
-- Benoem het kantelpunt of het beslissende moment.
-- Verwerk podium, strategie, incidenten en opvallende verschuivingen logisch in het verhaal.
-- Schrijf levendig, maar blijf feitelijk.
-- Vermijd clichés en generieke zinnen zoals:
-  - "maakte de sterkste indruk van het weekend"
-  - "liet zien waarom hij bovenaan staat"
-  - "was het referentiepunt"
-  - "een solide race"
-- Gebruik geen overdreven sensatiezinnen als daar geen duidelijke basis voor is.
-- Maak het journalistiek, leesbaar en compact.
-- Geen lijstje in prozavorm. Echt een verslag.
-- Highlights moeten kort, concreet en interessant zijn.
-- Als informatie ontbreekt, ga niet fantaseren.
-
-Geef ALLEEN geldige JSON terug in exact dit formaat:
-{
-  "winner": "string",
-  "winnerTeam": "string",
-  "podium": [
-    { "pos": 1, "name": "string", "team": "string" },
-    { "pos": 2, "name": "string", "team": "string" },
-    { "pos": 3, "name": "string", "team": "string" }
-  ],
-  "highlights": ["string", "string", "string", "string"],
-  "report": "string"
-}
-`.trim();
-
-  const userPrompt = `
-Schrijf een journalistiek F1-raceverslag op basis van deze gegevens.
-
-RACEGEGEVENS:
-${JSON.stringify(payload, null, 2)}
-
-Schrijfstijl:
-- zoals een toegankelijk autosportverslag
-- natuurlijk en menselijk
-- helder, concreet, verhalend
-- geen stijve AI-zinnen
-- geen herhaling van exact dezelfde structuur als eerdere verslagen
-- het verslag moet aanvoelen als een samenvatting van hoe de race verliep, niet alleen van de einduitslag
-
-Extra aanwijzingen:
-- Als er opvallende positiewinst was, verwerk dat inhoudelijk in het verhaal.
-- Als er sprintcontext is, noem die alleen als die echt relevant is voor het raceweekend.
-- Als er weinig raceverloopdata is, maak dan alsnog een prettig leesbaar verslag van de beschikbare feiten zonder te doen alsof je meer weet dan je weet.
-- Maak de highlights informatiever dan alleen "X won de race".
-
-Geef alleen JSON terug.
-`.trim();
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${env.OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        input: [
-          { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
-          { role: "user", content: [{ type: "input_text", text: userPrompt }] },
-        ],
-        text: {
-          format: {
-            type: "text",
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.log("OpenAI foutstatus:", response.status, errText);
-      return fallback;
-    }
-
-    const data: any = await response.json();
-
-    const outputText =
-      data?.output_text ||
-      data?.output
-        ?.map((x: any) => (x?.content || []).map((c: any) => c?.text || "").join(""))
-        .join("\n") ||
-      "";
-
-    if (!outputText.trim()) {
-      console.log("OpenAI gaf geen tekst terug, fallback gebruikt");
-      return fallback;
-    }
-
-    let parsed: any;
-
-    try {
-      parsed = JSON.parse(outputText);
-    } catch {
-      const match = outputText.match(/\{[\s\S]*\}/);
-      if (!match) {
-        console.log("OpenAI output was geen parsebare JSON:", outputText);
-        return fallback;
+        return env.ASSETS.fetch(request);
       }
-      parsed = JSON.parse(match[0]);
-    }
-
-    if (
-      !parsed ||
-      typeof parsed.winner !== "string" ||
-      typeof parsed.winnerTeam !== "string" ||
-      !Array.isArray(parsed.podium) ||
-      !Array.isArray(parsed.highlights) ||
-      typeof parsed.report !== "string"
-    ) {
-      console.log("OpenAI JSON had niet het juiste formaat:", parsed);
-      return fallback;
-    }
-
-    return {
-      winner: parsed.winner || fallback.winner,
-      winnerTeam: parsed.winnerTeam || fallback.winnerTeam,
-      podium: parsed.podium?.length ? parsed.podium : fallback.podium,
-      highlights: parsed.highlights?.length ? parsed.highlights.slice(0, 4) : fallback.highlights,
-      report: parsed.report || fallback.report,
     };
-  } catch (error) {
-    console.log("OpenAI request mislukte, fallback gebruikt:", getErrorMessage(error));
-    return fallback;
-  }
-}
 
-async function refreshReports(env: Env): Promise<Json> {
-  const season = getSeason(env);
+    async function refreshFacts(env: Env) {
+      const season = getSeason(env);
+      const [scheduleRes, resultsRes, sprintRes, driverRes, constructorRes] = await Promise.all([
+        fetchJson<RaceTablePayload>(`${JOLPICA_BASE}/${season}.json`),
+        fetchJson<RaceTablePayload>(`${JOLPICA_BASE}/${season}/results.json?limit=100`),
+        fetchJson<RaceTablePayload>(`${JOLPICA_BASE}/${season}/sprint.json?limit=100`).catch(() => ({ MRData: { RaceTable: { Races: [] } } })),
+        fetchJson<RaceTablePayload>(`${JOLPICA_BASE}/${season}/driverStandings.json`),
+        fetchJson<RaceTablePayload>(`${JOLPICA_BASE}/${season}/constructorStandings.json`)
+      ]);
 
-  const { value: results } = await cacheGet<any[]>(env, `results:last:${season}`);
-  const { value: sprintRaces } = await cacheGet<any[]>(env, `sprints:${season}`);
-  const { value: driverStandings } = await cacheGet<any[]>(env, `driver-standings:${season}`);
-  const { value: constructorStandings } = await cacheGet<any[]>(env, `constructor-standings:${season}`);
+      const schedule = scheduleRes.MRData?.RaceTable?.Races ?? [];
+      const results = resultsRes.MRData?.RaceTable?.Races ?? [];
+      const sprintResults = sprintRes.MRData?.RaceTable?.Races ?? [];
+      const driverStandings = driverRes.MRData?.StandingsTable?.StandingsLists?.[0]?.DriverStandings ?? [];
+      const constructorStandings = constructorRes.MRData?.StandingsTable?.StandingsLists?.[0]?.ConstructorStandings ?? [];
 
-  const finishedRaces = results || [];
-  const sprints = sprintRaces || [];
-  const driversLeader = driverStandings?.[0]?.name || null;
-  const constructorsLeader = constructorStandings?.[0]?.name || null;
+      await Promise.all([
+        upsertCache(env.DB, SCHEDULE_KEY, schedule),
+        upsertCache(env.DB, RESULTS_KEY, results),
+        upsertCache(env.DB, SPRINT_RESULTS_KEY, sprintResults),
+        upsertCache(env.DB, DRIVER_STANDINGS_KEY, driverStandings),
+        upsertCache(env.DB, CONSTRUCTOR_STANDINGS_KEY, constructorStandings)
+      ]);
 
-  let created = 0;
-  let updated = 0;
-  let locked = 0;
-
-  for (const race of finishedRaces) {
-    const round = Number(race.round);
-    const raceDateTimeIso = raceDateTimeUtc(race.date, race.time || "00:00:00Z");
-    const canEdit = isEditableRace(raceDateTimeIso);
-    const sprintRace = sprints.find((s: any) => Number(s.round) === round);
-    const payload = buildRacePayload(race, driversLeader, constructorsLeader, sprintRace);
-
-    const existing = await env.DB.prepare(
-      `SELECT round, source_hash, report, report_updated_at
-       FROM race_reports
-       WHERE season = ?1 AND round = ?2`
-    )
-      .bind(season, round)
-      .first<{ round: number; source_hash: string; report: string; report_updated_at: string }>();
-
-    const sourceHash = await sha1(JSON.stringify(payload));
-
-    if (existing && !canEdit) {
-      locked++;
-      continue;
-    }
-
-    if (existing && existing.source_hash === sourceHash) {
-      continue;
-    }
-
-    const generated = await generateRaceReport(env, payload);
-
-    await env.DB.prepare(
-      `INSERT INTO race_reports (
-        season, round, race_name, race_date, race_time_utc, race_datetime_utc,
-        circuit_name, locality, country, winner, winner_team,
-        podium_json, highlights_json, report, report_model, report_source,
-        source_hash, report_created_at, report_updated_at
-      ) VALUES (
-        ?1, ?2, ?3, ?4, ?5, ?6,
-        ?7, ?8, ?9, ?10, ?11,
-        ?12, ?13, ?14, ?15, ?16,
-        ?17, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-      )
-      ON CONFLICT(season, round) DO UPDATE SET
-        race_name = excluded.race_name,
-        race_date = excluded.race_date,
-        race_time_utc = excluded.race_time_utc,
-        race_datetime_utc = excluded.race_datetime_utc,
-        circuit_name = excluded.circuit_name,
-        locality = excluded.locality,
-        country = excluded.country,
-        winner = excluded.winner,
-        winner_team = excluded.winner_team,
-        podium_json = excluded.podium_json,
-        highlights_json = excluded.highlights_json,
-        report = excluded.report,
-        report_model = excluded.report_model,
-        report_source = excluded.report_source,
-        source_hash = excluded.source_hash,
-        report_updated_at = CURRENT_TIMESTAMP`
-    )
-      .bind(
+      return {
+        ok: true,
         season,
-        round,
-        race.raceName,
-        race.date,
-        race.time || "00:00:00Z",
-        raceDateTimeIso,
-        race.Circuit?.circuitName || "",
-        race.Circuit?.Location?.locality || "",
-        race.Circuit?.Location?.country || "",
-        generated.winner,
-        generated.winnerTeam,
-        JSON.stringify(generated.podium),
-        JSON.stringify(generated.highlights),
-        generated.report,
-        OPENAI_MODEL,
-        generated.report === buildFallbackReport(payload).report ? "fallback" : "openai",
-        sourceHash
-      )
-      .run();
+        scheduleCount: schedule.length,
+        resultsCount: results.length,
+        sprintCount: sprintResults.length,
+        driverStandingsCount: driverStandings.length,
+        constructorStandingsCount: constructorStandings.length,
+        factsUpdatedAt: new Date().toISOString()
+      };
+    }
 
-    if (existing) updated++;
-    else created++;
-  }
+    async function refreshReports(env: Env) {
+      const season = getSeason(env);
+      const facts = await ensureFacts(env);
+      const completedRaces = facts.results;
+      const sprintRaces = facts.sprintResults;
+      const driverStandings = facts.driverStandings;
+      const constructorStandings = facts.constructorStandings;
 
-  return {
-    ok: true,
-    created,
-    updated,
-    locked,
-    checked: finishedRaces.length,
-    updatedAt: new Date().toISOString(),
-  };
-}
+      let generatedReports = 0;
+      let updatedReports = 0;
+      let skippedLockedReports = 0;
+      let alreadyCurrent = 0;
 
-async function buildDashboard(env: Env): Promise<Json> {
-  const season = getSeason(env);
+      for (const race of completedRaces) {
+        const round = toNumber(race.round);
+        if (!round) continue;
 
-  const [{ value: schedule, updatedAt: scheduleUpdatedAt },
-    { value: driverStandings, updatedAt: driversUpdatedAt },
-    { value: constructorStandings, updatedAt: constructorsUpdatedAt },
-    { value: resultsUpdatedAtObj },
-    { value: sprintsUpdatedAtObj }] = await Promise.all([
-    cacheGet<any[]>(env, `schedule:${season}`),
-    cacheGet<any[]>(env, `driver-standings:${season}`),
-    cacheGet<any[]>(env, `constructor-standings:${season}`),
-    cacheGet<any>(env, `results:last:${season}`),
-    cacheGet<any>(env, `sprints:${season}`),
-  ] as any);
+        const sprintRace = sprintRaces.find((item) => toNumber(item.round) === round) ?? null;
+        const payload = buildSourcePayload(race, sprintRace, driverStandings, constructorStandings);
+        const sourceHash = await sha256(JSON.stringify(payload));
+        const existing = await (env.DB.prepare(`SELECT * FROM race_reports WHERE season = ?1 AND round = ?2`).bind(season, round).first() as Promise<SavedRaceReport | null>);
 
-  const reportsRows = await env.DB.prepare(
-    `SELECT
-      season, round, race_name, race_date, race_time_utc, race_datetime_utc,
-      circuit_name, locality, country, winner, winner_team,
-      podium_json, highlights_json, report, report_model, report_source,
-      report_created_at, report_updated_at
-     FROM race_reports
-     WHERE season = ?1
-     ORDER BY round DESC`
-  )
-    .bind(season)
-    .all<any>();
+        const hasExisting = Boolean(existing);
+        const existingHash = existing?.source_hash ?? null;
+        const canUpdateExisting = hasExisting ? reportIsStillEditable(existing?.race_datetime_utc ?? null) : false;
 
-  const reports = (reportsRows.results || []).map((r: any) => {
-    const raceDt = r.race_datetime_utc;
-    return {
-      n: r.round,
-      name: r.race_name,
-      date: r.race_date,
-      time: r.race_time_utc,
-      raceDateTimeUtc: raceDt,
-      circuit: r.circuit_name,
-      locality: r.locality,
-      country: r.country,
-      winner: r.winner,
-      winnerTeam: r.winner_team,
-      podium: JSON.parse(r.podium_json || "[]"),
-      highlights: JSON.parse(r.highlights_json || "[]"),
-      report: r.report,
-      createdAt: r.report_created_at,
-      updatedAt: r.report_updated_at,
-      reportModel: r.report_model,
-      reportSource: r.report_source,
-      editableUntil: editableUntilIso(raceDt),
-      isEditable: isEditableRace(raceDt),
-      isLocked: !isEditableRace(raceDt),
-      flag: flagForCountry(r.country),
-    };
-  });
+        if (hasExisting && !canUpdateExisting) {
+          skippedLockedReports += 1;
+          continue;
+        }
 
-  const factsCandidates = [
-    scheduleUpdatedAt,
-    driversUpdatedAt,
-    constructorsUpdatedAt,
-  ].filter(Boolean) as string[];
+        if (hasExisting && existingHash === sourceHash && canUpdateExisting) {
+          alreadyCurrent += 1;
+          continue;
+        }
 
-  const factsUpdatedAt = factsCandidates.sort().reverse()[0] || null;
-  const reportsUpdatedAt =
-    reports.map((r: any) => r.updatedAt).sort().reverse()[0] || null;
+        const generated = await generateRaceReport(env, payload);
+        const nowIso = new Date().toISOString();
 
-  return {
-    season,
-    updatedAt: new Date().toISOString(),
-    factsUpdatedAt,
-    reportsUpdatedAt,
-    schedule: schedule || [],
-    driverStandings: driverStandings || [],
-    constructorStandings: constructorStandings || [],
-    reports,
-  };
-}
+        await env.DB.prepare(`
+          INSERT OR REPLACE INTO race_reports (
+            season, round, race_name, race_date, race_time, race_datetime_utc,
+            circuit_name, locality, country,
+            winner_name, winner_team, podium_json, highlights_json, report_text,
+            source_payload_json, source_hash, report_model, report_source, created_at, updated_at
+          ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6,
+            ?7, ?8, ?9,
+            ?10, ?11, ?12, ?13, ?14,
+            ?15, ?16, ?17, ?18,
+            COALESCE((SELECT created_at FROM race_reports WHERE season = ?1 AND round = ?2), ?19),
+            ?20
+          )
+        `).bind(
+          season,
+          round,
+          race.raceName ?? `Round ${round}`,
+          race.date ?? null,
+          race.time ?? null,
+          getRaceDateTimeUtc(race),
+          race.Circuit?.circuitName ?? null,
+          race.Circuit?.Location?.locality ?? null,
+          race.Circuit?.Location?.country ?? null,
+          generated.winner,
+          generated.winnerTeam,
+          JSON.stringify(generated.podium),
+          JSON.stringify(generated.highlights),
+          generated.report,
+          JSON.stringify(payload),
+          sourceHash,
+          OPENAI_MODEL,
+          env.OPENAI_API_KEY ? 'openai-responses' : 'fallback',
+          existing?.created_at ?? nowIso,
+          nowIso
+        ).run();
 
-async function sha1(input: string): Promise<string> {
-  const data = new TextEncoder().encode(input);
-  const hashBuffer = await crypto.subtle.digest("SHA-1", data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-}
+        if (hasExisting) updatedReports += 1;
+        else generatedReports += 1;
+      }
+
+      return {
+        ok: true,
+        season,
+        generatedReports,
+        updatedReports,
+        skippedLockedReports,
+        alreadyCurrent,
+        reportsUpdatedAt: new Date().toISOString()
+      };
+    }
+
+    async function getDashboard(env: Env) {
+      const season = getSeason(env);
+      const [scheduleEntry, resultsEntry, sprintEntry, driverEntry, constructorEntry, reportsEntry] = await Promise.all([
+        getCacheWithMeta(env.DB, SCHEDULE_KEY),
+        getCacheWithMeta(env.DB, RESULTS_KEY),
+        getCacheWithMeta(env.DB, SPRINT_RESULTS_KEY),
+        getCacheWithMeta(env.DB, DRIVER_STANDINGS_KEY),
+        getCacheWithMeta(env.DB, CONSTRUCTOR_STANDINGS_KEY),
+        env.DB.prepare(`SELECT * FROM race_reports WHERE season = ?1 ORDER BY round DESC`).bind(season).all() as Promise<{ results: SavedRaceReport[] }>
+      ]);
+
+      const factsUpdatedAt = [scheduleEntry.updatedAt, resultsEntry.updatedAt, sprintEntry.updatedAt, driverEntry.updatedAt, constructorEntry.updatedAt]
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null;
+
+      const reportsUpdatedAt = (reportsEntry.results ?? []).map((row) => row.updated_at).filter(Boolean).sort().at(-1) ?? null;
+      const updatedAt = [factsUpdatedAt, reportsUpdatedAt].filter(Boolean).sort().at(-1) ?? null;
+      const completedRounds = new Set(((resultsEntry.value ?? []) as ErgastRace[]).map((race) => toNumber(race.round)));
+
+      return {
+        season,
+        updatedAt,
+        factsUpdatedAt,
+        reportsUpdatedAt,
+        schedule: ((scheduleEntry.value ?? []) as ErgastRace[]).map((race) => mapScheduleRace(race, completedRounds.has(toNumber(race.round)))),
+        driverStandings: ((driverEntry.value ?? []) as DriverStanding[]).map(mapDriverStanding),
+        constructorStandings: ((constructorEntry.value ?? []) as ConstructorStanding[]).map(mapConstructorStanding),
+        reports: (reportsEntry.results ?? []).map(mapSavedReport)
+      };
+    }
+
+    async function ensureFacts(env: Env) {
+      const [scheduleEntry, resultsEntry, sprintEntry, driverEntry, constructorEntry] = await Promise.all([
+        getCacheWithMeta(env.DB, SCHEDULE_KEY),
+        getCacheWithMeta(env.DB, RESULTS_KEY),
+        getCacheWithMeta(env.DB, SPRINT_RESULTS_KEY),
+        getCacheWithMeta(env.DB, DRIVER_STANDINGS_KEY),
+        getCacheWithMeta(env.DB, CONSTRUCTOR_STANDINGS_KEY)
+      ]);
+
+      if (scheduleEntry.value && resultsEntry.value && driverEntry.value && constructorEntry.value) {
+        return {
+          schedule: scheduleEntry.value as ErgastRace[],
+          results: resultsEntry.value as ErgastRace[],
+          sprintResults: (sprintEntry.value ?? []) as ErgastRace[],
+          driverStandings: driverEntry.value as DriverStanding[],
+          constructorStandings: constructorEntry.value as ConstructorStanding[]
+        };
+      }
+
+      await refreshFacts(env);
+      return ensureFacts(env);
+    }
+
+    async function generateRaceReport(env: Env, payload: ReturnType<typeof buildSourcePayload>): Promise<GeneratedReport> {
+      if (!env.OPENAI_API_KEY) {
+        return buildFallbackReport(payload);
+      }
+
+      const systemPrompt = [
+        'Je bent een Nederlandse sportjournalist voor een Formule 1-dashboard.',
+        'Schrijf feitelijk, levendig en compact.',
+        'Gebruik uitsluitend de aangeleverde data. Verzin niets.',
+        'Noem geen details die niet in de input staan.',
+        'Geef exact JSON terug met deze velden: winner, winnerTeam, podium, highlights, report.',
+        'highlights moet een array zijn van 3 tot 5 korte punten.',
+        'report moet bestaan uit 2 tot 4 alinea\'s in verzorgd Nederlands.'
+      ].join(' ');
+
+      const userPrompt = `Maak een journalistiek raceverslag van deze data:\n${JSON.stringify(payload)}`;
+
+      try {
+        const response = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'authorization': `Bearer ${env.OPENAI_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: OPENAI_MODEL,
+            instructions: systemPrompt,
+            input: userPrompt,
+            max_output_tokens: 1200
+          })
+        });
+
+        if (!response.ok) {
+          return buildFallbackReport(payload);
+        }
+
+        const data = await response.json() as any;
+        const rawText = extractOpenAiText(data);
+        const parsed = safeJsonParse<Partial<GeneratedReport> | null>(rawText, null);
+        if (!parsed?.report || !Array.isArray(parsed.podium) || !Array.isArray(parsed.highlights)) {
+          return buildFallbackReport(payload);
+        }
+        return normalizeGeneratedReport(parsed, payload);
+      } catch {
+        return buildFallbackReport(payload);
+      }
+    }
+
+    function buildSourcePayload(
+      race: ErgastRace,
+      sprint: ErgastRace | null,
+      driverStandings: DriverStanding[],
+      constructorStandings: ConstructorStanding[]
+    ) {
+      const results = race.Results ?? [];
+      const sprintResults = sprint?.SprintResults ?? [];
+      const fastestLap = results
+        .map((item) => ({
+          rank: toNumber(item.FastestLap?.rank),
+          name: formatDriverName(item.Driver),
+          team: item.Constructor?.name ?? 'Onbekend',
+          time: item.FastestLap?.Time?.time ?? null
+        }))
+        .find((item) => item.rank === 1) ?? null;
+
+      return {
+        season: toNumber(race.season),
+        round: toNumber(race.round),
+        raceName: race.raceName ?? 'Grand Prix',
+        date: race.date ?? null,
+        time: race.time ?? null,
+        raceDateTimeUtc: getRaceDateTimeUtc(race),
+        circuit: race.Circuit?.circuitName ?? null,
+        location: {
+          locality: race.Circuit?.Location?.locality ?? null,
+          country: race.Circuit?.Location?.country ?? null
+        },
+        winner: summarizeResult(results[0]),
+        podium: results.slice(0, 3).map((item, index) => ({
+          pos: index + 1,
+          name: formatDriverName(item.Driver),
+          team: item.Constructor?.name ?? 'Onbekend'
+        })),
+        finishersTop10: results.slice(0, 10).map((item) => ({
+          pos: toNumber(item.position),
+          name: formatDriverName(item.Driver),
+          team: item.Constructor?.name ?? 'Onbekend',
+          grid: toNumber(item.grid),
+          status: item.status ?? null,
+          points: toNumber(item.points)
+        })),
+        gainers: results
+          .map((item) => ({
+            name: formatDriverName(item.Driver),
+            team: item.Constructor?.name ?? 'Onbekend',
+            grid: toNumber(item.grid),
+            finish: toNumber(item.position),
+            gained: toNumber(item.grid) - toNumber(item.position)
+          }))
+          .filter((item) => Number.isFinite(item.gained) && item.gained > 0)
+          .sort((a, b) => b.gained - a.gained)
+          .slice(0, 4),
+        dnfs: results
+          .filter((item) => !isFinishedStatus(item.status))
+          .map((item) => ({
+            name: formatDriverName(item.Driver),
+            team: item.Constructor?.name ?? 'Onbekend',
+            status: item.status ?? 'Uitgevallen'
+          })),
+        fastestLap,
+        sprint: sprint
+          ? {
+              raceName: sprint.raceName ?? race.raceName ?? 'Sprint',
+              podium: sprintResults.slice(0, 3).map((item, index) => ({
+                pos: index + 1,
+                name: formatDriverName(item.Driver),
+                team: item.Constructor?.name ?? 'Onbekend'
+              }))
+            }
+          : null,
+        championship: summarizeStandings(driverStandings, constructorStandings)
+      };
+    }
+
+    function buildFallbackReport(payload: ReturnType<typeof buildSourcePayload>): GeneratedReport {
+      const winner = payload.winner.name || 'Onbekend';
+      const winnerTeam = payload.winner.team || 'Onbekend';
+      const podium = payload.podium;
+      const highlights: string[] = [];
+
+      highlights.push(`${winner} won de ${payload.raceName} voor ${winnerTeam}.`);
+      if (podium[1] && podium[2]) highlights.push(`${podium[1].name} en ${podium[2].name} completeerden het podium.`);
+      if (payload.gainers[0]) highlights.push(`${payload.gainers[0].name} viel op met winst van ${payload.gainers[0].gained} plaatsen.`);
+      if (payload.fastestLap?.name) highlights.push(`De snelste ronde kwam op naam van ${payload.fastestLap.name}${payload.fastestLap.time ? ` in ${payload.fastestLap.time}` : ''}.`);
+      else if (payload.dnfs[0]) highlights.push(`Uitvallers waren onder meer ${payload.dnfs.slice(0, 3).map((item) => item.name).join(', ')}.`);
+
+      const sprintParagraph = payload.sprint?.podium?.[0]
+        ? ` Het sprintgedeelte van het weekend werd gewonnen door ${payload.sprint.podium[0].name}${payload.sprint.podium[1] ? `, met daarnaast ${payload.sprint.podium[1].name} en ${payload.sprint.podium[2]?.name ?? ''} vooraan.` : '.'}`
+        : '';
+
+      const championshipLeader = payload.championship.driversTop3[0];
+      const report = `${winner} heeft de ${payload.raceName} gewonnen en daarmee de sterkste indruk van het weekend achtergelaten voor ${winnerTeam}. Het podium bestond verder uit ${podium.slice(1).map((item) => item.name).join(' en ') || 'de overige toppers in de uitslag'}. ${payload.gainers[0] ? `${payload.gainers.map((item) => `${item.name} won ${item.gained} plaatsen ten opzichte van de startopstelling`).join(', ')}.` : 'De uitslag liet vooral een duidelijke volgorde aan de voorkant van het veld zien.'}${sprintParagraph}
+
+${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).map((item) => `${item.name} (${item.status})`).join(', ')}.` : 'Op basis van de officiële data waren er geen opvallende uitvallers die het beeld volledig op zijn kop zetten.'} ${payload.fastestLap?.name ? `De snelste ronde kwam op naam van ${payload.fastestLap.name}.` : ''} ${championshipLeader?.name ? `In het kampioenschap blijft ${championshipLeader.name} vooralsnog het referentiepunt bovenaan de stand.` : ''}`.trim();
+
+      return { winner, winnerTeam, podium, highlights: highlights.slice(0, 5), report };
+    }
+
+    function normalizeGeneratedReport(parsed: Partial<GeneratedReport>, payload: ReturnType<typeof buildSourcePayload>): GeneratedReport {
+      const fallback = buildFallbackReport(payload);
+      const cleanedPodium = Array.isArray(parsed.podium)
+        ? parsed.podium
+            .map((item: any, index) => ({
+              pos: toNumber(item?.pos) || index + 1,
+              name: String(item?.name || '').trim(),
+              team: String(item?.team || '').trim()
+            }))
+            .filter((item) => item.name)
+            .slice(0, 3)
+        : [];
+      const cleanedHighlights = Array.isArray(parsed.highlights)
+        ? parsed.highlights.map((item) => String(item).trim()).filter(Boolean).slice(0, 5)
+        : [];
+
+      return {
+        winner: String(parsed.winner || fallback.winner).trim(),
+        winnerTeam: String(parsed.winnerTeam || fallback.winnerTeam).trim(),
+        podium: cleanedPodium.length ? cleanedPodium : fallback.podium,
+        highlights: cleanedHighlights.length ? cleanedHighlights : fallback.highlights,
+        report: String(parsed.report || fallback.report).trim()
+      };
+    }
+
+    function summarizeStandings(driverStandings: DriverStanding[], constructorStandings: ConstructorStanding[]) {
+      return {
+        driversTop3: driverStandings.slice(0, 3).map((item) => ({
+          pos: toNumber(item.position),
+          name: formatDriverName(item.Driver),
+          team: item.Constructors?.[0]?.name ?? 'Onbekend',
+          pts: toNumber(item.points)
+        })),
+        constructorsTop3: constructorStandings.slice(0, 3).map((item) => ({
+          pos: toNumber(item.position),
+          name: item.Constructor?.name ?? 'Onbekend',
+          pts: toNumber(item.points)
+        }))
+      };
+    }
+
+    async function upsertCache(db: D1Database, key: string, value: unknown) {
+      await db.prepare(`INSERT OR REPLACE INTO cache_entries (cache_key, json_value, updated_at) VALUES (?1, ?2, CURRENT_TIMESTAMP)`).bind(key, JSON.stringify(value)).run();
+    }
+
+    async function getCacheWithMeta(db: D1Database, key: string) {
+      const row = await (db.prepare(`SELECT json_value, updated_at FROM cache_entries WHERE cache_key = ?1`).bind(key).first() as Promise<CacheRow | null>);
+      return {
+        value: row?.json_value ? safeJsonParse<any[] | null>(row.json_value, null) : null,
+        updatedAt: row?.updated_at ?? null
+      };
+    }
+
+    async function fetchJson<T>(url: string): Promise<T> {
+      const response = await fetch(url, { cf: { cacheTtl: FACTS_CACHE_TTL_SECONDS, cacheEverything: true } } as any);
+      if (!response.ok) throw new Error(`Fetch mislukt: ${url}`);
+      return response.json() as Promise<T>;
+    }
+
+    function mapScheduleRace(race: ErgastRace, done: boolean) {
+      const locality = race.Circuit?.Location?.locality ?? '';
+      const country = race.Circuit?.Location?.country ?? '';
+      return {
+        n: toNumber(race.round),
+        gpName: race.raceName ?? 'Grand Prix',
+        circuit: race.Circuit?.circuitName ?? '',
+        loc: [locality, country].filter(Boolean).join(', '),
+        date: race.date ?? '',
+        time: race.time ? formatNLTime(race.time) : '',
+        flag: getFlagByCountry(country),
+        done
+      };
+    }
+
+    function mapDriverStanding(item: DriverStanding) {
+      return {
+        pos: toNumber(item.position),
+        name: formatDriverName(item.Driver),
+        team: item.Constructors?.[0]?.name ?? 'Onbekend',
+        pts: toNumber(item.points)
+      };
+    }
+
+    function mapConstructorStanding(item: ConstructorStanding) {
+      return {
+        pos: toNumber(item.position),
+        name: item.Constructor?.name ?? 'Onbekend',
+        pts: toNumber(item.points)
+      };
+    }
+
+    function mapSavedReport(row: SavedRaceReport) {
+      const editableUntil = getEditableUntilIso(row.race_datetime_utc);
+      const isEditable = reportIsStillEditable(row.race_datetime_utc);
+      return {
+        n: row.round,
+        name: row.race_name,
+        date: row.race_date,
+        time: row.race_time,
+        raceDateTimeUtc: row.race_datetime_utc,
+        circuit: row.circuit_name,
+        locality: row.locality,
+        country: row.country,
+        winner: row.winner_name,
+        winnerTeam: row.winner_team,
+        podium: safeJsonParse(row.podium_json, []),
+        highlights: safeJsonParse(row.highlights_json, []),
+        report: row.report_text,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        reportModel: row.report_model,
+        reportSource: row.report_source,
+        editableUntil,
+        isEditable,
+        isLocked: !isEditable,
+        flag: getFlagByCountry(row.country)
+      };
+    }
+
+    function summarizeResult(item?: ErgastResult) {
+      return {
+        name: formatDriverName(item?.Driver),
+        team: item?.Constructor?.name ?? 'Onbekend',
+        position: toNumber(item?.position),
+        points: toNumber(item?.points)
+      };
+    }
+
+    function formatDriverName(driver?: ErgastDriver) {
+      return `${driver?.givenName ?? ''} ${driver?.familyName ?? ''}`.trim() || 'Onbekend';
+    }
+
+    function isFinishedStatus(status?: string) {
+      const value = (status || '').toLowerCase();
+      return value.startsWith('finished') || value.includes('+');
+    }
+
+    function extractOpenAiText(response: any): string {
+      if (typeof response?.output_text === 'string' && response.output_text.trim()) return response.output_text;
+      if (Array.isArray(response?.output)) {
+        const chunks = response.output.flatMap((item: any) => Array.isArray(item?.content) ? item.content : []).map((content: any) => content?.text || '').filter(Boolean);
+        if (chunks.length) return chunks.join('\n');
+      }
+      return '';
+    }
+
+    function safeJsonParse<T>(text: string, fallback: T): T {
+      try {
+        const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+        return JSON.parse(cleaned) as T;
+      } catch {
+        try {
+          const extracted = extractFirstJsonObject(text);
+          return extracted ? JSON.parse(extracted) as T : fallback;
+        } catch {
+          return fallback;
+        }
+      }
+    }
+
+    function extractFirstJsonObject(text: string) {
+      const start = text.indexOf('{');
+      const end = text.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) return null;
+      return text.slice(start, end + 1);
+    }
+
+    function getRaceDateTimeUtc(race: ErgastRace) {
+      if (!race.date) return null;
+      const time = race.time ?? '00:00:00Z';
+      return new Date(`${race.date}T${time}`).toISOString();
+    }
+
+    function reportIsStillEditable(raceDateTimeUtc?: string | null) {
+      if (!raceDateTimeUtc) return false;
+      const raceMs = Date.parse(raceDateTimeUtc);
+      if (!Number.isFinite(raceMs)) return false;
+      return Date.now() < raceMs + REPORT_EDIT_WINDOW_MS;
+    }
+
+    function getEditableUntilIso(raceDateTimeUtc?: string | null) {
+      if (!raceDateTimeUtc) return null;
+      const raceMs = Date.parse(raceDateTimeUtc);
+      if (!Number.isFinite(raceMs)) return null;
+      return new Date(raceMs + REPORT_EDIT_WINDOW_MS).toISOString();
+    }
+
+    function formatNLTime(time: string) {
+      return new Date(`1970-01-01T${time}`).toLocaleTimeString('nl-NL', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Amsterdam'
+      }) + ' NL';
+    }
+
+    function getFlagByCountry(country?: string | null) {
+      const map: Record<string, string> = {
+        Australia: '🇦🇺', China: '🇨🇳', Japan: '🇯🇵', Bahrain: '🇧🇭', 'Saudi Arabia': '🇸🇦',
+        USA: '🇺🇸', Canada: '🇨🇦', Monaco: '🇲🇨', Spain: '🇪🇸', Austria: '🇦🇹',
+        UK: '🇬🇧', Belgium: '🇧🇪', Hungary: '🇭🇺', Netherlands: '🇳🇱', Italy: '🇮🇹',
+        Azerbaijan: '🇦🇿', Singapore: '🇸🇬', Mexico: '🇲🇽', Brazil: '🇧🇷', Qatar: '🇶🇦',
+        UAE: '🇦🇪', 'Abu Dhabi': '🇦🇪'
+      };
+      return country ? map[country] || '🏁' : '🏁';
+    }
+
+    async function sha256(text: string) {
+      const data = new TextEncoder().encode(text);
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+
+    function getSeason(env: Env) {
+      return toNumber(env.F1_SEASON_YEAR) || 2026;
+    }
+
+    function toNumber(value?: string | number | null) {
+      const num = Number(value ?? 0);
+      return Number.isFinite(num) ? num : 0;
+    }
+
+    function getErrorMessage(error: unknown) {
+      return error instanceof Error ? error.message : 'Onbekende fout';
+    }
+
+    function json(data: unknown, init: ResponseInit = {}) {
+      return new Response(JSON.stringify(data), {
+        ...init,
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          ...(init.headers || {})
+        }
+      });
+    }
