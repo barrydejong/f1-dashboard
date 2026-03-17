@@ -615,6 +615,8 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
       }
 
       const data: any = await res.json();
+      console.log('Brave query:', query);
+      console.log('Brave results count:', data?.web?.results?.length || 0);
       return data?.web?.results || [];
     }
 
