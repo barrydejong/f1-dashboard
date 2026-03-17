@@ -628,14 +628,16 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
     ): Promise<{ raceReportUrl: string | null; qualifyingReportUrl: string | null }> {
       const queries = {
         race: [
-          `site:formula1.com/en/latest/article "${raceName}" "${season}"`,
-          `site:formula1.com "${raceName}" "${season}" formula1 race report`,
-          `site:formula1.com "${raceName}" winner formula1 ${season}`
+          `site:formula1.com/en/latest/article "${raceName}" formula 1 ${season}`,
+          `site:formula1.com/en/latest/article "${raceName}" ${season} grand prix`,
+          `site:formula1.com/en/latest/article formula1 ${season} ${raceName} winner`,
+          `site:formula1.com/en/latest/article ${raceName} race report formula 1`
         ],
         qualifying: [
-          `site:formula1.com/en/latest/article "${raceName}" qualifying "${season}"`,
-          `site:formula1.com "${raceName}" pole position formula1 ${season}`,
-          `site:formula1.com "${raceName}" qualifying report formula1 ${season}`
+          `site:formula1.com/en/latest/article "${raceName}" qualifying formula 1 ${season}`,
+          `site:formula1.com/en/latest/article "${raceName}" pole position ${season}`,
+          `site:formula1.com/en/latest/article ${raceName} qualifying report formula 1`,
+          `site:formula1.com/en/latest/article ${raceName} qualifying ${season}`
         ]
       };
 
