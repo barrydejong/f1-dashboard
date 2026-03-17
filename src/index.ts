@@ -222,7 +222,7 @@ type D1Database = any;
         if (!round) continue;
     
         const sprintRace = sprintRaces.find((item) => toNumber(item.round) === round) ?? null;
-        const payload = buildSourcePayload(race, sprintRace, driverStandings, constructorStandings);
+        const payload = await buildSourcePayload(env, race, sprintRace, driverStandings, constructorStandings);
         const sourceHash = await sha256(JSON.stringify(payload));
         const existing = await (env.DB.prepare(`SELECT * FROM race_reports WHERE season = ?1 AND round = ?2`).bind(season, round).first() as Promise<SavedRaceReport | null>);
     
@@ -398,7 +398,8 @@ type D1Database = any;
       }
     }
     
-    function buildSourcePayload(
+    async function buildSourcePayload(
+      env: Env,
       race: ErgastRace,
       sprint: ErgastRace | null,
       driverStandings: DriverStanding[],
@@ -414,8 +415,13 @@ type D1Database = any;
           time: item.FastestLap?.Time?.time ?? null
         }))
         .find((item) => item.rank === 1) ?? null;
+
+      const sourceUrls = await findRaceSourceUrls(env, Number(race.season), Number(race.round), race.raceName);
+      const raceWeekendKey = `${race.season}-${race.round}`;
     
       return {
+        raceWeekendKey,
+        sourceUrls,
         season: toNumber(race.season),
         round: toNumber(race.round),
         raceName: race.raceName ?? 'Grand Prix',
