@@ -618,31 +618,64 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
       return data?.web?.results || [];
     }
 
-    async function findRaceSourceUrls(
+        async function findRaceSourceUrls(
       env: Env,
       season: number,
       round: number,
       raceName: string
     ): Promise<{ raceReportUrl: string | null; qualifyingReportUrl: string | null }> {
-      const raceQuery = `site:formula1.com ${season} "${raceName}" race report`;
-      const qualiQuery = `site:formula1.com ${season} "${raceName}" qualifying report`;
+      const queries = {
+        race: [
+          `site:formula1.com/en/latest/article "${raceName}" "${season}"`,
+          `site:formula1.com "${raceName}" "${season}" formula1 race report`,
+          `site:formula1.com "${raceName}" winner formula1 ${season}`
+        ],
+        qualifying: [
+          `site:formula1.com/en/latest/article "${raceName}" qualifying "${season}"`,
+          `site:formula1.com "${raceName}" pole position formula1 ${season}`,
+          `site:formula1.com "${raceName}" qualifying report formula1 ${season}`
+        ]
+      };
+
+      const runSearchGroup = async (group: string[]): Promise<any[]> => {
+        for (const query of group) {
+          const results = await braveSearch(env, query);
+          if (results.length) return results;
+        }
+        return [];
+      };
 
       const [raceResults, qualiResults] = await Promise.all([
-        braveSearch(env, raceQuery),
-        braveSearch(env, qualiQuery)
+        runSearchGroup(queries.race),
+        runSearchGroup(queries.qualifying)
       ]);
 
-      const pickFormula1Url = (items: any[]): string | null => {
-        const match = items.find((item: any) => {
-          const url = String(item?.url || '');
-          return url.includes('formula1.com/');
+      const pickFormula1Article = (items: any[]): string | null => {
+        const candidates = items
+          .map((item: any) => ({
+            url: String(item?.url || ''),
+            title: String(item?.title || ''),
+            description: String(item?.description || '')
+          }))
+          .filter((item) =>
+            item.url.includes('formula1.com/') &&
+            item.url.includes('/article/')
+          );
+
+        const preferred = candidates.find((item) => {
+          const haystack = `${item.title} ${item.description} ${item.url}`.toLowerCase();
+          return !haystack.includes('driver standings') &&
+                 !haystack.includes('constructor standings') &&
+                 !haystack.includes('schedule') &&
+                 !haystack.includes('calendar');
         });
-        return match?.url || null;
+
+        return preferred?.url || candidates[0]?.url || null;
       };
 
       return {
-        raceReportUrl: pickFormula1Url(raceResults),
-        qualifyingReportUrl: pickFormula1Url(qualiResults)
+        raceReportUrl: pickFormula1Article(raceResults),
+        qualifyingReportUrl: pickFormula1Article(qualiResults)
       };
     }
 
