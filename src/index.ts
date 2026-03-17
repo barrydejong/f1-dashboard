@@ -568,6 +568,29 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
         return [];
       }
 
+      const url = new URL('https://api.search.brave.com/res/v1/web/search');
+      url.searchParams.set('q', query);
+      url.searchParams.set('count', '5');
+      url.searchParams.set('search_lang', 'en');
+      url.searchParams.set('country', 'us');
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          'Accept': 'application/json',
+          'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY
+        }
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.log('Brave search fout:', res.status, text);
+        return [];
+      }
+
+      const data: any = await res.json();
+      return data?.web?.results || [];
+    }
+
     async function findRaceSourceUrls(
       env: Env,
       season: number,
@@ -595,30 +618,41 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
         qualifyingReportUrl: pickFormula1Url(qualiResults)
       };
     }
-        
-      const url = new URL('https://api.search.brave.com/res/v1/web/search');
-      url.searchParams.set('q', query);
-      url.searchParams.set('count', '5');
-      url.searchParams.set('search_lang', 'en');
-      url.searchParams.set('country', 'us');
 
-      const res = await fetch(url.toString(), {
-        headers: {
-          'Accept': 'application/json',
-          'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY
+    async function fetchArticleText(url: string): Promise<string | null> {
+      try {
+        const res = await fetch(url, {
+          headers: {
+            'Accept': 'text/html,application/xhtml+xml'
+          }
+        });
+
+        if (!res.ok) {
+          console.log('Artikel ophalen mislukt:', res.status, url);
+          return null;
         }
-      });
 
-  if (!res.ok) {
-    const text = await res.text();
-    console.log('Brave search fout:', res.status, text);
-    return [];
-  }
+        const html = await res.text();
 
-  const data: any = await res.json();
-  return data?.web?.results || [];
-}
-    
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        return text.length ? text : null;
+      } catch (error) {
+        console.log('fetchArticleText fout:', error);
+        return null;
+      }
+    }
+
     function mapScheduleRace(race: ErgastRace, done: boolean) {
       const locality = race.Circuit?.Location?.locality ?? '';
       const country = race.Circuit?.Location?.country ?? '';
