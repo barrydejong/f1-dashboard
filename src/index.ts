@@ -365,7 +365,22 @@ type D1Database = any;
         'report moet bestaan uit 2 tot 4 alinea\'s in verzorgd Nederlands.'
       ].join(' ');
     
-      const userPrompt = `Maak een journalistiek raceverslag van deze data:\n${JSON.stringify(payload)}`;
+      const userPrompt = `Schrijf een journalistiek raceverslag op basis van deze gegevens.
+
+Gebruik niet alleen de uitslagdata, maar ook de extra context uit de opgehaalde artikelen als daar bruikbare racebijzonderheden in staan.
+
+Belangrijk:
+- gebruik alleen details uit de meegeleverde data en artikelteksten
+- verzin niets
+- als de artikeltekst weinig bruikbaars bevat, schrijf dan alsnog een goed verslag op basis van de harde feiten
+- geef voorrang aan concrete racegebeurtenissen, strategie, startfase, kantelpunt, uitvallers en opvallende prestaties
+- vermijd generieke AI-zinnen en clichés
+- maak van de highlights echte nieuwswaardige punten
+
+Payload:
+${JSON.stringify(payload, null, 2)}
+
+Geef alleen geldige JSON terug.`;
     
       try {
         const response = await fetch('https://api.openai.com/v1/responses', {
