@@ -7,6 +7,7 @@ type D1Database = any;
       ASSETS: Fetcher;
       F1_SEASON_YEAR?: string;
       OPENAI_API_KEY?: string;
+      BRAVE_SEARCH_API_KEY?: string;
     }
     
     type ErgastDriver = {
@@ -128,7 +129,7 @@ type D1Database = any;
     const OPENAI_MODEL = 'gpt-5.4';
     const FACTS_CACHE_TTL_SECONDS = 300;
     const REPORT_EDIT_WINDOW_MS = 24 * 60 * 60 * 1000;
-    
+
     export default {
       async fetch(request: Request, env: Env): Promise<Response> {
         const url = new URL(request.url);
@@ -555,6 +556,35 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
       if (!response.ok) throw new Error(`Fetch mislukt: ${url}`);
       return response.json() as Promise<T>;
     }
+
+    async function braveSearch(env: Env, query: string): Promise<any[]> {
+      if (!env.BRAVE_SEARCH_API_KEY) {
+        return [];
+      }
+
+      const url = new URL('https://api.search.brave.com/res/v1/web/search');
+      url.searchParams.set('q', query);
+      url.searchParams.set('count', '5');
+      url.searchParams.set('search_lang', 'en');
+      url.searchParams.set('country', 'us');
+
+      const res = await fetch(url.toString(), {
+        headers: {
+          'Accept': 'application/json',
+          'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY
+        }
+      });
+    }
+
+  if (!res.ok) {
+    const text = await res.text();
+    console.log('Brave search fout:', res.status, text);
+    return [];
+  }
+
+  const data: any = await res.json();
+  return data?.web?.results || [];
+}
     
     function mapScheduleRace(race: ErgastRace, done: boolean) {
       const locality = race.Circuit?.Location?.locality ?? '';
