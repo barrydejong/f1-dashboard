@@ -562,6 +562,34 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
         return [];
       }
 
+    async function findRaceSourceUrls(
+      env: Env,
+      season: number,
+      round: number,
+      raceName: string
+    ): Promise<{ raceReportUrl: string | null; qualifyingReportUrl: string | null }> {
+      const raceQuery = `site:formula1.com ${season} "${raceName}" race report`;
+      const qualiQuery = `site:formula1.com ${season} "${raceName}" qualifying report`;
+
+      const [raceResults, qualiResults] = await Promise.all([
+        braveSearch(env, raceQuery),
+        braveSearch(env, qualiQuery)
+      ]);
+
+      const pickFormula1Url = (items: any[]): string | null => {
+        const match = items.find((item: any) => {
+          const url = String(item?.url || '');
+          return url.includes('formula1.com/');
+        });
+        return match?.url || null;
+      };
+
+      return {
+        raceReportUrl: pickFormula1Url(raceResults),
+        qualifyingReportUrl: pickFormula1Url(qualiResults)
+      };
+    }
+        
       const url = new URL('https://api.search.brave.com/res/v1/web/search');
       url.searchParams.set('q', query);
       url.searchParams.set('count', '5');
