@@ -242,6 +242,12 @@ type D1Database = any;
     
         const generated = await generateRaceReport(env, payload);
         const nowIso = new Date().toISOString();
+        const usedSource =
+          generated.report === buildFallbackReport(payload).report
+            ? 'fallback'
+            : payload.articleContext?.raceArticleSummary || payload.articleContext?.qualifyingArticleSummary || payload.articleContext?.sprintArticleSummary
+              ? 'openai-with-articles'
+              : 'openai';
     
         await env.DB.prepare(`
           INSERT OR REPLACE INTO race_reports (
@@ -275,7 +281,7 @@ type D1Database = any;
           JSON.stringify(payload),
           sourceHash,
           OPENAI_MODEL,
-          env.OPENAI_API_KEY ? 'openai-responses' : 'fallback',
+          usedSource,
           existing?.created_at ?? nowIso,
           nowIso
         ).run();
@@ -356,26 +362,28 @@ type D1Database = any;
       }
     
       const systemPrompt = [
-        'Je bent een Nederlandse sportjournalist voor een Formule 1-dashboard.',
-        'Schrijf feitelijk, levendig en compact.',
-        'Gebruik uitsluitend de aangeleverde data. Verzin niets.',
-        'Noem geen details die niet in de input staan.',
+        'Je bent een Nederlandse Formule 1-journalist voor een dashboard met raceverslagen.',
+        'Schrijf natuurlijk, levendig en feitelijk.',
+        'Gebruik zowel de harde racegegevens als de artikelcontext als die beschikbaar is.',
+        'Gebruik uitsluitend details die in de input staan. Verzin niets.',
+        'Als artikelcontext beschikbaar is, gebruik die om startfase, strategiemomenten, incidenten, kantelpunten en opvallende prestaties concreet te beschrijven.',
+        'Als artikelcontext zwak of afwezig is, schrijf dan alsnog een goed verslag op basis van de harde data.',
+        'Vermijd clichés zoals: "maakte de sterkste indruk van het weekend", "was het referentiepunt", "een solide race".',
+        'Maak de highlights nieuwswaardig en concreet.',
         'Geef exact JSON terug met deze velden: winner, winnerTeam, podium, highlights, report.',
         'highlights moet een array zijn van 3 tot 5 korte punten.',
         'report moet bestaan uit 2 tot 4 alinea\'s in verzorgd Nederlands.'
       ].join(' ');
     
-      const userPrompt = `Schrijf een journalistiek raceverslag op basis van deze gegevens.
-
-Gebruik niet alleen de uitslagdata, maar ook de extra context uit de opgehaalde artikelen als daar bruikbare racebijzonderheden in staan.
+      const userPrompt = `Schrijf een journalistiek raceverslag op basis van deze payload.
 
 Belangrijk:
-- gebruik alleen details uit de meegeleverde data en artikelteksten
-- verzin niets
-- als de artikeltekst weinig bruikbaars bevat, schrijf dan alsnog een goed verslag op basis van de harde feiten
-- geef voorrang aan concrete racegebeurtenissen, strategie, startfase, kantelpunt, uitvallers en opvallende prestaties
-- vermijd generieke AI-zinnen en clichés
-- maak van de highlights echte nieuwswaardige punten
+- gebruik de harde racegegevens als basis
+- gebruik de artikelcontext voor bijzondere race-ontwikkelingen als die beschikbaar is
+- geef voorrang aan concrete gebeurtenissen uit de broncontext boven generieke samenvattingen
+- noem sprintcontext alleen als die inhoudelijk relevant is
+- verzin niets buiten de input
+- voorkom saaie AI-formuleringen
 
 Payload:
 ${JSON.stringify(payload, null, 2)}
@@ -590,14 +598,14 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
       return response.json() as Promise<T>;
     }
 
-    async function braveSearch(env: Env, query: string): Promise<any[]> {
+    async function braveSearch(env: Env, query: string): Promise<SearchHit[]> {
       if (!env.BRAVE_SEARCH_API_KEY) {
         return [];
       }
 
       const url = new URL('https://api.search.brave.com/res/v1/web/search');
       url.searchParams.set('q', query);
-      url.searchParams.set('count', '5');
+      url.searchParams.set('count', '8');
       url.searchParams.set('search_lang', 'en');
       url.searchParams.set('country', 'us');
 
@@ -615,71 +623,125 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
       }
 
       const data: any = await res.json();
-      console.log('Brave query:', query);
-      console.log('Brave results count:', data?.web?.results?.length || 0);
-      return data?.web?.results || [];
+      const results = data?.web?.results || [];
+
+      return results.map((item: any) => ({
+        title: String(item?.title || ''),
+        description: String(item?.description || ''),
+        url: String(item?.url || '')
+      }));
     }
 
-        async function findRaceSourceUrls(
+    async function findRaceSourceCandidates(
       env: Env,
       season: number,
-      round: number,
-      raceName: string
-    ): Promise<{ raceReportUrl: string | null; qualifyingReportUrl: string | null }> {
-      const queries = {
-        race: [
-          `site:formula1.com/en/latest/article "${raceName}" formula 1 ${season}`,
-          `site:formula1.com/en/latest/article "${raceName}" ${season} grand prix`,
-          `site:formula1.com/en/latest/article formula1 ${season} ${raceName} winner`,
-          `site:formula1.com/en/latest/article ${raceName} race report formula 1`
-        ],
-        qualifying: [
-          `site:formula1.com/en/latest/article "${raceName}" qualifying formula 1 ${season}`,
-          `site:formula1.com/en/latest/article "${raceName}" pole position ${season}`,
-          `site:formula1.com/en/latest/article ${raceName} qualifying report formula 1`,
-          `site:formula1.com/en/latest/article ${raceName} qualifying ${season}`
-        ]
-      };
+      raceName: string,
+      hasSprint: boolean
+    ): Promise<{
+      raceHits: SearchHit[];
+      qualifyingHits: SearchHit[];
+      sprintHits: SearchHit[];
+    }> {
+      const raceQueries = [
+        `site:formula1.com/en/latest/article "${raceName}" formula 1 ${season}`,
+        `site:formula1.com/en/latest/article "${raceName}" ${season} grand prix`,
+        `site:formula1.com/en/latest/article ${raceName} winner formula 1`,
+        `site:formula1.com/en/latest/article ${raceName} race report formula 1`
+      ];
 
-      const runSearchGroup = async (group: string[]): Promise<any[]> => {
-        for (const query of group) {
-          const results = await braveSearch(env, query);
-          if (results.length) return results;
+      const qualifyingQueries = [
+        `site:formula1.com/en/latest/article "${raceName}" qualifying formula 1 ${season}`,
+        `site:formula1.com/en/latest/article "${raceName}" pole position ${season}`,
+        `site:formula1.com/en/latest/article ${raceName} qualifying report formula 1`,
+        `site:formula1.com/en/latest/article ${raceName} qualifying ${season}`
+      ];
+
+      const sprintQueries = hasSprint
+        ? [
+            `site:formula1.com/en/latest/article "${raceName}" sprint formula 1 ${season}`,
+            `site:formula1.com/en/latest/article ${raceName} sprint report formula 1`,
+            `site:formula1.com/en/latest/article ${raceName} sprint ${season}`
+          ]
+        : [];
+
+      const runQueries = async (queries: string[]): Promise<SearchHit[]> => {
+        const all: SearchHit[] = [];
+
+        for (const query of queries) {
+          const hits = await braveSearch(env, query);
+          all.push(...hits);
         }
-        return [];
+
+        const seen = new Set<string>();
+        return all.filter((hit) => {
+          if (!hit.url || seen.has(hit.url)) return false;
+          seen.add(hit.url);
+          return true;
+        });
       };
 
-      const [raceResults, qualiResults] = await Promise.all([
-        runSearchGroup(queries.race),
-        runSearchGroup(queries.qualifying)
+      const [raceHits, qualifyingHits, sprintHits] = await Promise.all([
+        runQueries(raceQueries),
+        runQueries(qualifyingQueries),
+        runQueries(sprintQueries)
       ]);
 
-      const pickFormula1Article = (items: any[]): string | null => {
-        const candidates = items
-          .map((item: any) => ({
-            url: String(item?.url || ''),
-            title: String(item?.title || ''),
-            description: String(item?.description || '')
-          }))
-          .filter((item) =>
-            item.url.includes('formula1.com/') &&
-            item.url.includes('/article/')
+      return { raceHits, qualifyingHits, sprintHits };
+    }
+
+    function pickBestArticle(hits: SearchHit[], kind: 'race' | 'qualifying' | 'sprint'): ArticlePick {
+      const filtered = hits.filter((hit) => {
+        const url = hit.url.toLowerCase();
+        const text = `${hit.title} ${hit.description} ${hit.url}`.toLowerCase();
+
+        if (!url.includes('formula1.com/')) return false;
+        if (!url.includes('/article/')) return false;
+
+        if (
+          text.includes('standings') ||
+          text.includes('calendar') ||
+          text.includes('schedule') ||
+          text.includes('tickets') ||
+          text.includes('video') ||
+          text.includes('drivers') ||
+          text.includes('teams')
+        ) {
+          return false;
+        }
+
+        if (kind === 'race') {
+          return (
+            text.includes('wins') ||
+            text.includes('won') ||
+            text.includes('victory') ||
+            text.includes('grand prix') ||
+            text.includes('beats')
           );
+        }
 
-        const preferred = candidates.find((item) => {
-          const haystack = `${item.title} ${item.description} ${item.url}`.toLowerCase();
-          return !haystack.includes('driver standings') &&
-                 !haystack.includes('constructor standings') &&
-                 !haystack.includes('schedule') &&
-                 !haystack.includes('calendar');
-        });
+        if (kind === 'qualifying') {
+          return (
+            text.includes('qualifying') ||
+            text.includes('pole') ||
+            text.includes('front row') ||
+            text.includes('fastest')
+          );
+        }
 
-        return preferred?.url || candidates[0]?.url || null;
-      };
+        if (kind === 'sprint') {
+          return text.includes('sprint');
+        }
+
+        return true;
+      });
+
+      const hit = filtered[0] || hits.find((h) => h.url.includes('/article/')) || null;
+      if (!hit) return null;
 
       return {
-        raceReportUrl: pickFormula1Article(raceResults),
-        qualifyingReportUrl: pickFormula1Article(qualiResults)
+        url: hit.url,
+        title: hit.title,
+        description: hit.description
       };
     }
 
@@ -702,6 +764,7 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
           .replace(/<script[\s\S]*?<\/script>/gi, ' ')
           .replace(/<style[\s\S]*?<\/style>/gi, ' ')
           .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+          .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
           .replace(/<[^>]+>/g, ' ')
           .replace(/&nbsp;/g, ' ')
           .replace(/&amp;/g, '&')
@@ -710,11 +773,25 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
           .replace(/\s+/g, ' ')
           .trim();
 
-        return text.length ? text : null;
+        if (!text.length) return null;
+
+        return text.slice(0, 12000);
       } catch (error) {
         console.log('fetchArticleText fout:', error);
         return null;
       }
+    }
+
+    function buildArticleSummary(content: ArticleContent): string | null {
+      if (!content || !content.text) return null;
+
+      const parts = [
+        content.title,
+        content.description,
+        content.text.slice(0, 1800)
+      ].filter(Boolean);
+
+      return parts.join('\n\n');
     }
 
     function mapScheduleRace(race: ErgastRace, done: boolean) {
