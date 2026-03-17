@@ -418,10 +418,22 @@ type D1Database = any;
 
       const sourceUrls = await findRaceSourceUrls(env, Number(race.season), Number(race.round), race.raceName);
       const raceWeekendKey = `${race.season}-${race.round}`;
+
+      const raceReportText = sourceUrls.raceReportUrl
+        ? await fetchArticleText(sourceUrls.raceReportUrl)
+        : null;
+
+      const qualifyingReportText = sourceUrls.qualifyingReportUrl
+        ? await fetchArticleText(sourceUrls.qualifyingReportUrl)
+        : null;
     
       return {
         raceWeekendKey,
         sourceUrls,
+        articleText: {
+          raceReportText,
+          qualifyingReportText
+},
         season: toNumber(race.season),
         round: toNumber(race.round),
         raceName: race.raceName ?? 'Grand Prix',
