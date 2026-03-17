@@ -574,7 +574,6 @@ ${payload.dnfs[0] ? `Niet iedereen haalde de finish: ${payload.dnfs.slice(0, 3).
           'X-Subscription-Token': env.BRAVE_SEARCH_API_KEY
         }
       });
-    }
 
   if (!res.ok) {
     const text = await res.text();
